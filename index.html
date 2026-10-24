@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kirim Kas Kecil Depo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: #f2f5f9; color: #1f2933; font-size: 15px; }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 16px; }
+  .head { background: #0b4f8a; color: #fff; padding: 18px 16px; border-radius: 12px; margin-bottom: 14px; }
+  .head h1 { margin: 0; font-size: 20px; }
+  .head p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 14px; border: 1px solid #e1e7ef; }
+  label { display: block; font-size: 13px; font-weight: bold; color: #52606d; margin: 0 0 6px; }
+  select, input[type=file] { width: 100%; font-size: 15px; padding: 10px; border: 1px solid #cbd2d9; border-radius: 8px; background: #fff; margin-bottom: 14px; }
+  .hint { font-size: 12px; color: #7b8794; margin: -8px 0 14px; }
+  button { width: 100%; padding: 13px; font-size: 16px; font-weight: bold; border: 0; border-radius: 8px; background: #0b4f8a; color: #fff; cursor: pointer; }
+  button:disabled { background: #9aa5b1; cursor: default; }
+  button.kedua { background: #fff; color: #0b4f8a; border: 1px solid #0b4f8a; margin-top: 8px; }
+  .box { border-radius: 8px; padding: 12px; font-size: 14px; line-height: 1.55; margin-top: 12px; }
+  .ok { background: #e3f6e8; color: #1e6b35; }
+  .warn { background: #fff4d6; color: #7a5300; }
+  .err { background: #fde5e5; color: #9b1c1c; }
+  .info { background: #e6f0fb; color: #0b4f8a; }
+  .bar { height: 8px; background: #e1e7ef; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  .bar div { height: 100%; width: 0; background: #0b4f8a; transition: width .2s; }
+  ul { margin: 6px 0 0; padding-left: 18px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Kirim Kas Kecil Depo</h1>
+    <p>PT Satelit Komunika Nusantara &middot; untuk kepala gudang</p>
+  </div>
+
+  <div class="card" id="formCard">
+    <label for="depo">Depo</label>
+    <select id="depo"><option value="">Memuat daftar depo...</option></select>
+
+    <label for="fileKas">File list kas kecil (Excel)</label>
+    <input type="file" id="fileKas" accept=".xlsx">
+    <div class="hint">Contoh: KAS KECIL - LAMPUNG NEW.xlsx. Boleh file lengkap semua bulan.</div>
+
+    <label for="fileNota">File foto nota (Excel)</label>
+    <input type="file" id="fileNota" accept=".xlsx">
+    <div class="hint">Contoh: NOTA KAS LPG.xlsx. Nota yang sudah pernah dikirim otomatis dilewati.</div>
+
+    <button id="btnKirim" onclick="kirim()">Kirim ke finance</button>
+    <div id="konfirmasi" class="box warn hidden"></div>
+    <div id="status" class="box info hidden"><span id="statusTeks"></span><div class="bar"><div id="barIsi"></div></div></div>
+    <div id="hasil"></div>
+  </div>
+</div>
+
+<script>
+// ====================== PEMBACA EXCEL (di browser) ======================
+var NAMA_BULAN = ['JANUARI','FEBRUARI','MARET','APRIL','MEI','JUNI','JULI','AGUSTUS','SEPTEMBER','OKTOBER','NOVEMBER','DESEMBER'];
+
+function xmlDoc(s) { return new DOMParser().parseFromString(s, 'application/xml'); }
+function byTag(node, tag) { return Array.prototype.slice.call(node.getElementsByTagNameNS('*', tag)); }
+function attrR(el, nama) {
+  return el.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', nama) || el.getAttribute('r:' + nama) || '';
+}
+function gabungPath(dasar, target) {
+  if (target.charAt(0) === '/') return target.substr(1);
+  var parts = dasar.split('/'); parts.pop();
+  target.split('/').forEach(function (p) { if (p === '..') parts.pop(); else if (p !== '.' && p !== '') parts.push(p); });
+  return parts.join('/');
+}
+function relsPath(path) { var p = path.split('/'); var f = p.pop(); return p.join('/') + '/_rels/' + f + '.rels'; }
+function teksZip(zip, path) { var f = zip.file(path); return f ? f.async('string') : Promise.resolve(null); }
+
+function bacaRels(zip, path) {
+  return teksZip(zip, relsPath(path)).then(function (s) {
+    var hasil = {};
+    if (!s) return hasil;
+    byTag(xmlDoc(s), 'Relationship').forEach(function (r) {
+      hasil[r.getAttribute('Id')] = { target: gabungPath(path, r.getAttribute('Target')), type: r.getAttribute('Type') || '' };
+    });
+    return hasil;
+  });
+}
+
+function daftarSheet(zip) {
+  return teksZip(zip, 'xl/workbook.xml').then(function (s) {
+    if (!s) throw new Error('File ini bukan Excel .xlsx yang valid.');
+    var doc = xmlDoc(s);
+    return bacaRels(zip, 'xl/workbook.xml').then(function (rels) {
+      return byTag(doc, 'sheet').map(function (el) {
+        var rel = rels[attrR(el, 'id')];
+        return { nama: el.getAttribute('name'), path: rel ? rel.target : '' };
+      }).filter(function (x) { return x.path; });
+    });
+  });
+}
+
+function hurufKeKolom(ref) {
+  var m = /^([A-Z]+)/.exec(ref); var n = 0;
+  for (var i = 0; i < m[1].length; i++) n = n * 26 + (m[1].charCodeAt(i) - 64);
+  return n;
+}
+
+/** Baca semua sel 1 sheet -> {baris: {nomor: {kolom: nilai}}} */
+function bacaSel(zip, path, shared) {
+  return teksZip(zip, path).then(function (s) {
+    var doc = xmlDoc(s);
+    var baris = {};
+    byTag(doc, 'c').forEach(function (c) {
+      var ref = c.getAttribute('r'); if (!ref) return;
+      var t = c.getAttribute('t') || '';
+      var vEl = byTag(c, 'v')[0];
+      var v = vEl ? vEl.textContent : '';
+      var nilai;
+      if (t === 's') nilai = shared[parseInt(v, 10)] || '';
+      else if (t === 'inlineStr') { var is = byTag(c, 'is')[0]; nilai = is ? is.textContent : ''; }
+      else if (t === 'str') nilai = v;
+      else if (t === 'e') nilai = '';
+      else if (t === 'b') nilai = v === '1';
+      else nilai = v === '' ? '' : parseFloat(v);
+      var r = parseInt(ref.replace(/^[A-Z]+/, ''), 10);
+      (baris[r] = baris[r] || {})[hurufKeKolom(ref)] = nilai;
+    });
+    return baris;
+  });
+}
+
+function bacaShared(zip) {
+  return teksZip(zip, 'xl/sharedStrings.xml').then(function (s) {
+    if (!s) return [];
+    return byTag(xmlDoc(s), 'si').map(function (si) {
+      var ts = byTag(si, 't').filter(function (t) { return t.parentNode.localName !== 'rPh'; });
+      return ts.map(function (t) { return t.textContent; }).join('');
+    });
+  });
+}
+
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+function serialKeTgl(n) {
+  var d = new Date(Math.round((n - 25569) * 86400000));
+  return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+}
+function bacaTgl(v) {
+  if (typeof v === 'number' && v > 20000 && v < 80000) return serialKeTgl(Math.floor(v));
+  var s = String(v || '').trim();
+  var m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/.exec(s);
+  if (m) {
+    var th = parseInt(m[3], 10); if (th < 100) th += 2000;
+    return th + '-' + pad2(parseInt(m[2], 10)) + '-' + pad2(parseInt(m[1], 10));
+  }
+  return '';
+}
+function ymDariTeks(s) {
+  s = String(s || '').toUpperCase();
+  for (var i = 0; i < 12; i++) {
+    var m = new RegExp('\\b' + NAMA_BULAN[i] + '\\s+(20\\d{2})\\b').exec(s);
+    if (m) return m[1] + '-' + pad2(i + 1);
+  }
+  return '';
+}
+function ymDariNamaSheet(n) {
+  var m = /^\s*(\d{1,2})\s+(\d{2})\s*$/.exec(n);
+  if (m && +m[1] >= 1 && +m[1] <= 12) return '20' + m[2] + '-' + pad2(+m[1]);
+  return '';
+}
+
+/** File list kas kecil -> bulan-bulan transaksi (>= mulai) */
+function bacaKas(zip, mulai) {
+  var hasil = { bulan: [], dilewati: [], depoFile: {}, catatan: [] };
+  return Promise.all([daftarSheet(zip), bacaShared(zip)]).then(function (a) {
+    var sheets = a[0], shared = a[1];
+    var antri = Promise.resolve();
+    var petaYm = {};
+    sheets.forEach(function (sh) {
+      antri = antri.then(function () { return bacaSel(zip, sh.path, shared); }).then(function (sel) {
+        var nomor = Object.keys(sel).map(Number).sort(function (x, y) { return x - y; });
+        var hdr = 0, kol = {};
+        for (var i = 0; i < nomor.length && nomor[i] <= 15; i++) {
+          var b = sel[nomor[i]];
+          var ada = Object.keys(b).some(function (k) { return String(b[k]).trim().toUpperCase() === 'KETERANGAN'; });
+          if (ada) {
+            hdr = nomor[i];
+            Object.keys(b).forEach(function (k) { kol[String(b[k]).trim().toUpperCase().replace(/\s+/g, ' ')] = +k; });
+            break;
+          }
+        }
+        if (!hdr || !kol['KETERANGAN'] || !kol['KREDIT']) { hasil.dilewati.push(sh.nama); return; }
+        var ymJudul = '';
+        nomor.forEach(function (n) {
+          if (n >= hdr || ymJudul) return;
+          var b = sel[n]; Object.keys(b).forEach(function (k) { if (!ymJudul) ymJudul = ymDariTeks(b[k]); });
+        });
+        var kNo = kol['NO'], kTgl = kol['TANGGAL'], kKet = kol['KETERANGAN'], kDb = kol['DEBET'], kKr = kol['KREDIT'],
+            kSaldo = kol['SALDO'], kDepo = kol['DEPO'], kKode = kol['KODE PERK'] || kol['KODE PERKIRAAN'] || kol['KODE'], kBiaya = kol['BIAYA'];
+        var rows = [];
+        nomor.forEach(function (n) {
+          if (n <= hdr) return;
+          var b = sel[n];
+          var ket = String(b[kKet] === undefined ? '' : b[kKet]).trim();
+          var db = b[kDb], kr = b[kKr];
+          var adaAngka = (db !== '' && db !== undefined && Number(db) !== 0) || (kr !== '' && kr !== undefined && Number(kr) !== 0);
+          if (!ket && !adaAngka) return;
+          if (kDepo && b[kDepo]) hasil.depoFile[String(b[kDepo]).trim().toUpperCase()] = true;
+          rows.push({
+            no: b[kNo] === undefined ? '' : b[kNo], tgl: bacaTgl(b[kTgl]), ket: ket,
+            debet: db === undefined ? '' : db, kredit: kr === undefined ? '' : kr,
+            saldo: kSaldo && b[kSaldo] !== undefined ? b[kSaldo] : '',
+            kode: kKode && b[kKode] !== undefined ? String(b[kKode]) : '', biaya: kBiaya && b[kBiaya] !== undefined ? String(b[kBiaya]) : ''
+          });
+        });
+        if (!rows.length) return;
+        // Bulan ditentukan dari tanggal transaksi terbanyak (judul sheet bisa salah ketik, mis. "DESEMBER 2024" utk data 2023)
+        var hitung = {}, ymTgl = '', maks = 0;
+        rows.forEach(function (r) { if (r.tgl) { var k = r.tgl.substr(0, 7); hitung[k] = (hitung[k] || 0) + 1; if (hitung[k] > maks) { maks = hitung[k]; ymTgl = k; } } });
+        var jmlTgl = 0; Object.keys(hitung).forEach(function (k) { jmlTgl += hitung[k]; });
+        if (/REKAP/i.test(sh.nama) || (Object.keys(hitung).length > 2 && maks < jmlTgl * 0.7)) { hasil.dilewati.push(sh.nama); return; }
+        var ym = ymTgl || ymJudul || ymDariNamaSheet(sh.nama);
+        if (!ym) { hasil.dilewati.push(sh.nama); return; }
+        if (ymTgl && ymJudul && ymTgl !== ymJudul && (ymTgl >= mulai || ymJudul >= mulai)) {
+          hasil.catatan.push('Judul sheet "' + sh.nama + '" menyebut ' + ymJudul + ', tapi tanggal transaksinya ' + ymTgl + '. Dipakai ' + ymTgl + ' (sesuai tanggal).');
+        }
+        if (ym < mulai) return;
+        if (petaYm[ym]) hasil.catatan.push('Bulan ' + ym + ' ada di 2 sheet ("' + petaYm[ym].sheet + '" dan "' + sh.nama + '"), dipakai sheet "' + sh.nama + '".');
+        petaYm[ym] = { ym: ym, sheet: sh.nama, rows: rows };
+      });
+    });
+    return antri.then(function () {
+      var lain = hasil.dilewati.filter(function (n) { return !/KODE|REKAP/i.test(n); });
+      if (lain.length) hasil.catatan.push('Sheet dilewati karena bukan sheet transaksi bulanan: ' + lain.join(', ') + '.');
+      hasil.bulan = Object.keys(petaYm).sort().map(function (k) { return petaYm[k]; });
+      return hasil;
+    });
+  });
+}
+
+/** File nota -> [{bpk, ym, gambar:[path]}] untuk BPK >= mulai */
+function bacaNota(zip, mulai) {
+  var hasil = { nota: [], catatan: [] };
+  return daftarSheet(zip).then(function (sheets) {
+    var antri = Promise.resolve();
+    sheets.forEach(function (sh) {
+      antri = antri.then(function () {
+        var nama = String(sh.nama).trim();
+        var m = /^BPK[\s\-_]*(\d{2})(\d{2})/i.exec(nama);
+        if (!m || +m[2] < 1 || +m[2] > 12) { hasil.catatan.push('Sheet "' + nama + '" dilewati: nama bukan nomor BPK.'); return; }
+        var ym = '20' + m[1] + '-' + m[2];
+        if (ym < mulai) return;
+        return bacaRels(zip, sh.path).then(function (rels) {
+          var drawings = Object.keys(rels).filter(function (k) { return /\/drawing$/.test(rels[k].type); }).map(function (k) { return rels[k].target; });
+          var gambar = [];
+          var a2 = Promise.resolve();
+          drawings.forEach(function (d) {
+            a2 = a2.then(function () {
+              return Promise.all([teksZip(zip, d), bacaRels(zip, d)]).then(function (x) {
+                if (!x[0]) return;
+                byTag(xmlDoc(x[0]), 'blip').forEach(function (bl) {
+                  var rel = x[1][attrR(bl, 'embed')];
+                  if (rel && zip.file(rel.target) && gambar.indexOf(rel.target) < 0) gambar.push(rel.target);
+                });
+              });
+            });
+          });
+          return a2.then(function () {
+            if (!gambar.length) { hasil.catatan.push('Sheet "' + nama + '" tidak berisi foto.'); return; }
+            hasil.nota.push({ bpk: nama.toUpperCase().replace(/\s+/g, ''), ym: ym, gambar: gambar });
+          });
+        });
+      });
+    });
+    return antri.then(function () { return hasil; });
+  });
+}
+
+function mimeDari(path) {
+  var ext = path.split('.').pop().toLowerCase();
+  var peta = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', tif: 'image/tiff', tiff: 'image/tiff' };
+  return { ext: ext === 'jpg' ? 'jpeg' : ext, mime: peta[ext] || 'application/octet-stream' };
+}
+</script>
+
+<script>
+// ====================== HALAMAN ======================
+var APP = { depo: [], mulai: '2026-01' };
+
+// Di halaman Apps Script pakai google.script.run; di GitHub Pages pakai doPost tanpa login (aman utk banyak akun Google)
+var API_URL = 'https://script.google.com/macros/s/AKfycbwe6PJAvITEwoqoc761JapfG706EJCTAym8XIXAanGw7CHmHrAJev4QX61CTLt0fC1F_w/exec';
+function run(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  if (window.google && google.script && google.script.run) {
+    return new Promise(function (ok, gagal) {
+      var r = google.script.run.withSuccessHandler(ok).withFailureHandler(gagal);
+      r[fn].apply(r, args);
+    });
+  }
+  return fetch(API_URL, { method: 'POST', credentials: 'omit', redirect: 'follow', body: JSON.stringify({ fn: fn, args: args }) })
+    .then(function (r) { if (!r.ok) throw new Error('Server tidak merespons (' + r.status + '). Coba lagi.'); return r.json(); })
+    .then(function (j) { if (!j.ok) throw new Error(j.error); return j.data; });
+}
+function el(id) { return document.getElementById(id); }
+function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function status(teks, persen) {
+  el('status').classList.remove('hidden');
+  el('statusTeks').textContent = teks;
+  el('barIsi').style.width = (persen || 0) + '%';
+}
+function selesaiStatus() { el('status').classList.add('hidden'); }
+function pesanGagal(e) { return (e && e.message) ? e.message : String(e); }
+
+function tanya(html) {
+  return new Promise(function (ok) {
+    var k = el('konfirmasi');
+    k.innerHTML = html + '<button onclick="window._jawab(true)" style="margin-top:10px">Ya, tetap kirim</button>' +
+      '<button class="kedua" onclick="window._jawab(false)">Batal</button>';
+    k.classList.remove('hidden');
+    window._jawab = function (v) { k.classList.add('hidden'); ok(v); };
+  });
+}
+
+function muat() {
+  run('apiInit').then(function (d) {
+    APP.depo = d.depo; APP.mulai = d.mulai;
+    var s = el('depo');
+    s.innerHTML = '<option value="">- pilih depo -</option>' + d.depo.map(function (x) {
+      return '<option value="' + esc(x.nama) + '">' + esc(x.judul) + '</option>';
+    }).join('');
+    try { var lalu = localStorage.getItem('kasDepo'); if (lalu) s.value = lalu; } catch (e) {}
+  }).catch(function (e) { el('hasil').innerHTML = '<div class="box err">Gagal memuat: ' + esc(pesanGagal(e)) + '</div>'; });
+}
+
+function cocokDepo(depoFile, d) {
+  var keys = Object.keys(depoFile);
+  if (!keys.length) return true;
+  var nama = d.nama.toUpperCase(), judul = d.judul.toUpperCase();
+  return keys.some(function (k) { return k === judul || k === nama || k.indexOf(nama) >= 0; });
+}
+
+async function kirim() {
+  var depo = el('depo').value;
+  var fKas = el('fileKas').files[0], fNota = el('fileNota').files[0];
+  el('hasil').innerHTML = '';
+  if (!depo) { el('hasil').innerHTML = '<div class="box err">Pilih depo dulu.</div>'; return; }
+  if (!fKas && !fNota) { el('hasil').innerHTML = '<div class="box err">Pilih minimal 1 file (list kas atau nota).</div>'; return; }
+  try { localStorage.setItem('kasDepo', depo); } catch (e) {}
+  var d = APP.depo.filter(function (x) { return x.nama === depo; })[0];
+  el('btnKirim').disabled = true;
+  var catatan = [];
+  try {
+    var kas = { bulan: [], depoFile: {}, catatan: [] }, nota = { nota: [], catatan: [] }, zipNota = null;
+    if (fKas) {
+      status('Membaca file list kas...', 5);
+      kas = await bacaKas(await JSZip.loadAsync(fKas), APP.mulai);
+      catatan = catatan.concat(kas.catatan);
+      if (!kas.bulan.length) throw new Error('Tidak ada transaksi bulan ' + APP.mulai + ' ke atas di file list kas. Pastikan file yang dipilih benar.');
+    }
+    if (fNota) {
+      status('Membaca file nota...', 10);
+      zipNota = await JSZip.loadAsync(fNota);
+      nota = await bacaNota(zipNota, APP.mulai);
+      catatan = catatan.concat(nota.catatan);
+    }
+    if (fKas && !cocokDepo(kas.depoFile, d)) {
+      selesaiStatus();
+      var ok = await tanya('File list kas berisi data <b>' + esc(Object.keys(kas.depoFile).join(', ')) + '</b>, padahal Anda memilih <b>' + esc(d.judul) + '</b>. Yakin depo yang dipilih sudah benar?');
+      if (!ok) { el('btnKirim').disabled = false; return; }
+    }
+    status('Menyimpan transaksi...', 15);
+    var jmlBaris = 0; kas.bulan.forEach(function (b) { jmlBaris += b.rows.length; });
+    var res = await run('apiSimpanKiriman', depo, {
+      bulan: kas.bulan.map(function (b) { return { ym: b.ym, rows: b.rows }; }),
+      nota: nota.nota.map(function (n) { return { bpk: n.bpk, ym: n.ym, jumlah: n.gambar.length }; }),
+      fileKas: fKas ? fKas.name : '', fileNota: fNota ? fNota.name : ''
+    });
+    if (res.kosong) {
+      selesaiStatus();
+      el('hasil').innerHTML = '<div class="box info">Tidak ada data baru. Semua transaksi dan nota di file ini sudah pernah dikirim.</div>';
+      el('btnKirim').disabled = false;
+      return;
+    }
+    var gagalNota = [], terkirim = [];
+    var perlu = nota.nota.filter(function (n) { return res.notaPerlu.indexOf(n.bpk) >= 0; });
+    var totalGbr = 0; perlu.forEach(function (n) { totalGbr += n.gambar.length; });
+    var ke = 0;
+    for (var i = 0; i < perlu.length; i++) {
+      var n = perlu[i], okNota = true;
+      for (var g = 0; g < n.gambar.length; g++) {
+        ke++;
+        status('Mengirim foto nota ' + ke + ' dari ' + totalGbr + ' (' + n.bpk + ')...', 20 + Math.round(78 * ke / totalGbr));
+        var b64 = await zipNota.file(n.gambar[g]).async('base64');
+        var tipe = mimeDari(n.gambar[g]);
+        var info = { bpk: n.bpk, ym: n.ym, urut: g + 1, ext: tipe.ext, mime: tipe.mime };
+        var berhasil = false;
+        for (var coba = 0; coba < 3 && !berhasil; coba++) {
+          try { await run('apiSimpanNota', depo, res.kirimanId, info, b64); berhasil = true; }
+          catch (e) { if (coba === 2) okNota = false; }
+        }
+      }
+      (okNota ? terkirim : gagalNota).push(n.bpk);
+    }
+    selesaiStatus();
+    var h = '<div class="box ok"><b>Terkirim ke finance.</b><br>' +
+      res.baru + ' transaksi baru' + (res.bulan.length ? ' (' + esc(res.bulan.join(', ')) + ')' : '') + '. ' +
+      (jmlBaris - res.baru > 0 ? (jmlBaris - res.baru) + ' baris lama dilewati karena sudah ada.' : '') +
+      (res.hilang ? '<br>' + res.hilang + ' baris lama berubah/dihapus di file, data finance ikut diperbarui.' : '') +
+      '<br>' + terkirim.length + ' nota baru' + (terkirim.length > 8 ? ' (' + esc(terkirim[0]) + ' s/d ' + esc(terkirim[terkirim.length - 1]) + ')'
+        : terkirim.length ? ': ' + esc(terkirim.join(', ')) : '') + '.</div>';
+    if (gagalNota.length) h += '<div class="box err">' + gagalNota.length + ' nota gagal terkirim (' + esc(gagalNota.join(', ')) +
+      '). Kirim ulang file nota yang sama, nota yang sudah masuk otomatis dilewati.</div>';
+    if (res.peringatan.length) h += '<div class="box warn"><b>Perlu dicek:</b><ul>' + res.peringatan.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul></div>';
+    if (res.info && res.info.length) h += '<div class="box info"><b>Info:</b><ul>' + res.info.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul></div>';
+    if (catatan.length) h += '<div class="box info"><b>Catatan file:</b><ul>' + catatan.slice(0, 10).map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul></div>';
+    el('hasil').innerHTML = h;
+    el('fileKas').value = ''; el('fileNota').value = '';
+  } catch (e) {
+    selesaiStatus();
+    el('hasil').innerHTML = '<div class="box err">Gagal: ' + esc(pesanGagal(e)) + '</div>';
+  }
+  el('btnKirim').disabled = false;
+}
+
+muat();
+</script>
+</body>
+</html>
