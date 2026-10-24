@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kas Kecil Depo - Finance</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: #f2f5f9; color: #1f2933; font-size: 14px; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .head { background: #0b4f8a; color: #fff; padding: 16px; border-radius: 12px; margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .head h1 { margin: 0; font-size: 20px; flex: 1; min-width: 200px; }
+  .head input { padding: 8px 10px; border-radius: 8px; border: 0; font-size: 14px; width: 190px; }
+  .card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 14px; border: 1px solid #e1e7ef; }
+  .card h2 { margin: 0 0 10px; font-size: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select, input[type=text] { padding: 9px 10px; font-size: 14px; border: 1px solid #cbd2d9; border-radius: 8px; background: #fff; }
+  button, a.btn { padding: 9px 14px; font-size: 14px; border-radius: 8px; border: 1px solid #0b4f8a; background: #0b4f8a; color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
+  button.ghost, a.ghost { background: #fff; color: #0b4f8a; }
+  button.kecil { padding: 4px 10px; font-size: 12px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .stat { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .stat div { background: #f6f8fb; border-radius: 8px; padding: 10px 12px; }
+  .stat small { color: #616e7c; font-size: 12px; display: block; }
+  .stat b { font-size: 18px; }
+  .tblwrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 6px; border-bottom: 1px solid #edf0f4; text-align: left; vertical-align: top; }
+  th { color: #616e7c; font-weight: normal; background: #f6f8fb; position: sticky; top: 0; }
+  td.r, th.r { text-align: right; white-space: nowrap; }
+  tr.awal td { background: #f6f8fb; font-style: italic; }
+  tr.masuk td { color: #1e6b35; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; display: inline-block; }
+  .p-belum { background: #fff4d6; color: #7a5300; }
+  .p-dicek { background: #e3f6e8; color: #1e6b35; }
+  .p-netral { background: #edf0f4; color: #616e7c; }
+  .warn { background: #fff4d6; color: #7a5300; border-radius: 8px; padding: 8px 10px; font-size: 12px; white-space: pre-line; margin-top: 4px; }
+  .msg { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .m-ok { background: #e3f6e8; color: #1e6b35; }
+  .m-err { background: #fde5e5; color: #9b1c1c; }
+  .m-info { background: #e6f0fb; color: #0b4f8a; }
+  .grid-nota { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .nota { border: 1px solid #e1e7ef; border-radius: 8px; padding: 10px; }
+  .nota b { display: block; font-size: 13px; word-break: break-all; }
+  .nota small { color: #616e7c; display: block; margin: 2px 0 8px; }
+  .muted { color: #7b8794; font-size: 12px; }
+  .hidden { display: none; }
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 9; padding: 16px; }
+  #overlay.hidden { display: none; }
+  #overlay .isi { background: #fff; border-radius: 12px; padding: 18px; max-width: 92vw; max-height: 92vh; overflow: auto; text-align: center; }
+  #overlay img { max-width: 100%; max-height: 72vh; display: block; margin: 0 auto 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Kas Kecil Depo &middot; Finance</h1>
+    <input type="text" id="nama" placeholder="Nama Anda (untuk tanda cek)">
+  </div>
+
+  <div class="card">
+    <div class="filter">
+      <select id="fDepo"><option value="SEMUA">Semua depo</option></select>
+      <select id="fBulan"><option value="SEMUA">Semua bulan</option></select>
+      <select id="fStatus"><option value="SEMUA">Semua transaksi</option><option value="BELUM">Hanya belum dicek</option></select>
+      <button onclick="tampil()">Tampilkan</button>
+      <button class="ghost" onclick="unduhExcel()">Unduh Excel</button>
+      <button class="ghost" id="btnDepo" onclick="bukaDepo()" style="margin-left:auto">+ Depo / store</button>
+    </div>
+  </div>
+
+  <div class="card hidden" id="panelDepo">
+    <h2>Tambah depo / store baru <span class="muted" id="infoDepo"></span></h2>
+    <div class="filter" style="margin-bottom:6px">
+      <input type="text" id="depoNama" placeholder="Nama singkat, mis. BATAM" oninput="isiJudul()" style="min-width:220px">
+      <input type="text" id="depoJudul" placeholder="Judul di Excel, mis. DEPO BATAM" oninput="this.dataset.ubah='1'" style="min-width:260px">
+      <button onclick="tambahDepo()">Tambah</button>
+      <button class="ghost" onclick="bukaDepo()">Tutup</button>
+    </div>
+    <div class="muted" style="margin-bottom:10px">Nama singkat muncul di pilihan depo halaman gudang. Judul dipakai di Excel rekap (depo: "DEPO BATAM"; store/kantor: tulis lengkap, mis. "STORE MALL BATAM").</div>
+    <div class="muted" id="daftarDepo" style="line-height:1.8"></div>
+  </div>
+
+  <div id="pesan"></div>
+
+  <div class="card"><div class="stat" id="ringkas"></div></div>
+
+  <div class="card">
+    <h2>Kiriman dari depo <span class="muted">Tandai dicek setelah nota fisik tiba di kantor Pekanbaru</span></h2>
+    <div class="tblwrap"><table id="tKiriman"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Transaksi <span class="muted" id="infoTrx"></span></h2>
+    <div class="filter" style="margin-bottom:10px">
+      <button class="ghost kecil" onclick="pilihSemuaBelum()">Pilih semua yang belum dicek</button>
+      <button class="kecil" onclick="ubahTerpilih('DICEK')">Tandai dicek</button>
+      <button class="ghost kecil" onclick="ubahTerpilih('BELUM')">Batalkan cek</button>
+      <span class="muted" id="infoPilih"></span>
+    </div>
+    <div class="tblwrap"><table id="tTrx"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Arsip nota</h2>
+    <div class="filter" style="margin-bottom:10px">
+      <input type="text" id="cariNota" placeholder="BPK-2610-PG0002">
+      <button class="ghost" onclick="muatNota()">Cari</button>
+      <button class="ghost" onclick="unduhSemuaNota()">Unduh semua (zip)</button>
+    </div>
+    <div class="grid-nota" id="daftarNota"></div>
+  </div>
+</div>
+<div id="overlay" class="hidden"><div class="isi" id="overlayIsi"></div></div>
+
+<script>
+var APP = { depo: [], data: null, nota: [] };
+
+// Di halaman Apps Script pakai google.script.run; di GitHub Pages pakai doPost tanpa login (aman utk banyak akun Google)
+var API_URL = 'https://script.google.com/macros/s/AKfycbwe6PJAvITEwoqoc761JapfG706EJCTAym8XIXAanGw7CHmHrAJev4QX61CTLt0fC1F_w/exec';
+function run(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  if (window.google && google.script && google.script.run) {
+    return new Promise(function (ok, gagal) {
+      var r = google.script.run.withSuccessHandler(ok).withFailureHandler(gagal);
+      r[fn].apply(r, args);
+    });
+  }
+  return fetch(API_URL, { method: 'POST', credentials: 'omit', redirect: 'follow', body: JSON.stringify({ fn: fn, args: args }) })
+    .then(function (r) { if (!r.ok) throw new Error('Server tidak merespons (' + r.status + '). Coba lagi.'); return r.json(); })
+    .then(function (j) { if (!j.ok) throw new Error(j.error); return j.data; });
+}
+function el(id) { return document.getElementById(id); }
+function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function rp(n) { var v = Math.round(Number(n) || 0); return (v < 0 ? '-' : '') + String(Math.abs(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function pesan(html, jenis) { el('pesan').innerHTML = html ? '<div class="msg m-' + (jenis || 'info') + '">' + html + '</div>' : ''; }
+function gagal(e) { pesan(esc((e && e.message) || String(e)), 'err'); }
+function overlay(html) { el('overlayIsi').innerHTML = html; el('overlay').classList.remove('hidden'); }
+function tutup() { el('overlay').classList.add('hidden'); }
+function namaCek() {
+  var n = el('nama').value.trim();
+  if (!n) { el('nama').focus(); pesan('Isi nama Anda dulu di kotak kanan atas, supaya tercatat siapa yang mengecek.', 'err'); return ''; }
+  try { localStorage.setItem('kasNama', n); } catch (e) {}
+  return n;
+}
+function filter() { return { depo: el('fDepo').value, ym: el('fBulan').value, status: el('fStatus').value }; }
+function namaDepo(n) { var d = APP.depo.filter(function (x) { return x.nama === n; })[0]; return d ? d.judul : n; }
+
+function b64KeBlob(b64, mime) {
+  var bin = atob(b64), arr = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+function tombolSimpan(blob, nama, judul) {
+  var url = URL.createObjectURL(blob);
+  overlay('<p style="margin:0 0 6px"><b>' + esc(judul || 'File siap') + '</b></p><p class="muted" style="margin:0 0 14px;word-break:break-all">' + esc(nama) + '</p>' +
+    '<a class="btn" href="' + url + '" download="' + esc(nama) + '" onclick="setTimeout(tutup,800)">Simpan file</a> ' +
+    '<button class="ghost" onclick="tutup()">Tutup</button>');
+}
+
+function isiDepo(list) {
+  var pilih = el('fDepo').value || 'SEMUA';
+  APP.depo = list;
+  el('fDepo').innerHTML = '<option value="SEMUA">Semua depo</option>' + list.map(function (x) {
+    return '<option value="' + esc(x.nama) + '">' + esc(x.judul) + '</option>';
+  }).join('');
+  el('fDepo').value = list.some(function (x) { return x.nama === pilih; }) ? pilih : 'SEMUA';
+  el('infoDepo').textContent = list.length + ' terdaftar';
+  el('daftarDepo').innerHTML = list.map(function (x) { return esc(x.judul); }).join(' &middot; ');
+}
+
+function bukaDepo() {
+  var p = el('panelDepo');
+  p.classList.toggle('hidden');
+  if (!p.classList.contains('hidden')) el('depoNama').focus();
+}
+
+function isiJudul() {
+  var j = el('depoJudul');
+  if (j.dataset.ubah) return;
+  var n = el('depoNama').value.trim().toUpperCase();
+  j.value = !n ? '' : /^(KANTOR|STORE|INFINIX)/.test(n) ? n : 'DEPO ' + n;
+}
+
+function tambahDepo() {
+  var n = el('depoNama').value.trim(), j = el('depoJudul').value.trim();
+  if (!n) { pesan('Isi nama singkat depo/store dulu.', 'err'); el('depoNama').focus(); return; }
+  pesan('Menyimpan...');
+  run('apiTambahDepo', n, j).then(function (r) {
+    isiDepo(r.depo);
+    el('depoNama').value = ''; el('depoJudul').value = ''; delete el('depoJudul').dataset.ubah;
+    pesan('"' + esc(r.judul) + '" ditambahkan. Sudah bisa dipilih di halaman gudang (muat ulang halamannya).', 'ok');
+  }).catch(gagal);
+}
+
+function muat() {
+  try { el('nama').value = localStorage.getItem('kasNama') || ''; } catch (e) {}
+  pesan('Memuat...');
+  run('apiInitFinance').then(function (d) {
+    isiDepo(d.depo);
+    el('fBulan').innerHTML = '<option value="SEMUA">Semua bulan</option>' + d.bulan.map(function (b) {
+      return '<option value="' + b.ym + '">' + esc(b.label) + '</option>';
+    }).join('');
+    if (d.bulan.length) el('fBulan').value = d.bulan[0].ym;
+    tampil();
+  }).catch(gagal);
+}
+
+function tampil() {
+  pesan('Memuat data...');
+  var f = filter();
+  return Promise.all([run('apiData', f), run('apiDaftarNota', f.depo, f.ym, el('cariNota').value)]).then(function (a) {
+    APP.data = a[0]; APP.nota = a[1];
+    pesan('');
+    gambarRingkas(); gambarKiriman(); gambarTrx(); gambarNota();
+  }).catch(gagal);
+}
+
+function gambarRingkas() {
+  var r = APP.data.ringkas;
+  el('ringkas').innerHTML =
+    '<div><small>Saldo awal</small><b>' + rp(r.awal) + '</b></div>' +
+    '<div><small>Penambahan kas</small><b>' + rp(r.masuk) + '</b></div>' +
+    '<div><small>Pengeluaran</small><b>' + rp(r.keluar) + '</b></div>' +
+    '<div><small>Saldo akhir</small><b>' + rp(r.akhir) + '</b></div>' +
+    '<div><small>Belum dicek</small><b style="color:#7a5300">' + r.belum + ' baris</b><small>Rp' + rp(r.belumRp) + '</small></div>';
+}
+
+function gambarKiriman() {
+  var k = APP.data.kiriman;
+  if (!k.length) { el('tKiriman').innerHTML = '<tr><td class="muted">Belum ada kiriman untuk pilihan ini.</td></tr>'; return; }
+  el('tKiriman').innerHTML = '<tr><th>Waktu kirim</th><th>Depo</th><th>Isi</th><th>Nota</th><th>Status cek fisik</th></tr>' +
+    k.map(function (x) {
+      var st = x.dicek
+        ? '<span class="pill p-dicek">Dicek &middot; ' + esc(x.oleh) + ' ' + esc(String(x.tglCek).substr(0, 10)) + '</span>'
+        : '<span class="pill p-belum">Belum dicek' + (x.belum ? ' (' + x.belum + ' baris)' : '') + '</span> ' +
+          '<button class="kecil" onclick="tandaiKiriman(\'' + esc(x.id) + '\')">Tandai dicek</button>';
+      return '<tr><td>' + esc(x.waktu) + '</td><td>' + esc(namaDepo(x.depo)) + '</td><td>' + x.baru + ' transaksi baru' +
+        (x.bulan.length ? '<br><span class="muted">' + esc(x.bulan.join(', ')) + '</span>' : '') +
+        (x.peringatan ? '<div class="warn">' + esc(x.peringatan) + '</div>' : '') + '</td><td>' +
+        (x.nota.length > 4 ? (function (n) { n = n.slice().sort(); return n.length + ' nota<br><span class="muted">' + esc(n[0]) + ' s/d ' + esc(n[n.length - 1]) + '</span>'; })(x.nota)
+          : x.nota.length ? x.nota.map(esc).join('<br>') : '<span class="muted">-</span>') + '</td><td>' + st + '</td></tr>';
+    }).join('');
+}
+
+function gambarTrx() {
+  var d = APP.data, semuaDepo = el('fDepo').value === 'SEMUA', semuaBulan = el('fBulan').value === 'SEMUA';
+  el('infoTrx').textContent = d.totalRows + ' baris' + (d.terpotong ? ' (yang tampil ' + d.rows.length + ' pertama, persempit pilihan untuk melihat sisanya)' : '');
+  if (!d.rows.length) { el('tTrx').innerHTML = '<tr><td class="muted">Tidak ada transaksi.</td></tr>'; updatePilih(); return; }
+  var h = '<tr><th></th>' + (semuaDepo ? '<th>Depo</th>' : '') + (semuaBulan ? '<th>Bulan</th>' : '') +
+    '<th>Tgl</th><th>Keterangan</th><th>Biaya</th><th class="r">Debet</th><th class="r">Kredit</th><th class="r">Saldo</th><th>Cek</th></tr>';
+  h += d.rows.map(function (r, i) {
+    var kls = r.jenis === 'SALDO_AWAL' ? 'awal' : r.jenis === 'MASUK' ? 'masuk' : '';
+    var cb = r.jenis === 'KELUAR' ? '<input type="checkbox" class="cb" data-i="' + i + '" onchange="updatePilih()">' : '';
+    var st = r.jenis !== 'KELUAR' ? '<span class="pill p-netral">-</span>'
+      : r.status === 'DICEK' ? '<span class="pill p-dicek" title="' + esc(r.oleh + ' ' + r.tglCek) + '">Dicek</span>'
+      : '<span class="pill p-belum">Belum</span>';
+    return '<tr class="' + kls + '"><td>' + cb + '</td>' + (semuaDepo ? '<td>' + esc(r.depo) + '</td>' : '') +
+      (semuaBulan ? '<td>' + esc(r.ym) + '</td>' : '') + '<td>' + esc(r.tgl) + '</td><td>' + esc(r.ket) + '</td><td>' + esc(r.biaya) +
+      '</td><td class="r">' + (r.debet ? rp(r.debet) : '') + '</td><td class="r">' + (r.kredit ? rp(r.kredit) : '') +
+      '</td><td class="r"' + (r.saldo < 0 ? ' style="color:#9b1c1c"' : '') + '>' + rp(r.saldo) + '</td><td>' + st + '</td></tr>';
+  }).join('');
+  el('tTrx').innerHTML = h;
+  updatePilih();
+}
+
+function terpilih() {
+  return Array.prototype.slice.call(document.querySelectorAll('.cb:checked')).map(function (c) { return APP.data.rows[+c.getAttribute('data-i')]; });
+}
+function updatePilih() { var n = document.querySelectorAll('.cb:checked').length; el('infoPilih').textContent = n ? n + ' baris dipilih' : ''; }
+function pilihSemuaBelum() {
+  Array.prototype.forEach.call(document.querySelectorAll('.cb'), function (c) { c.checked = APP.data.rows[+c.getAttribute('data-i')].status === 'BELUM'; });
+  updatePilih();
+}
+
+function ubahTerpilih(status) {
+  var p = terpilih();
+  if (!p.length) { pesan('Centang dulu baris yang mau diubah.', 'err'); return; }
+  var nama = status === 'DICEK' ? namaCek() : (el('nama').value.trim() || '-');
+  if (!nama) return;
+  pesan('Menyimpan...');
+  run('apiUbahBaris', p.map(function (r) { return { depo: r.depo, id: r.id }; }), status, nama).then(function (r) {
+    return tampil().then(function () { pesan(r.jml + ' baris ' + (status === 'DICEK' ? 'ditandai dicek.' : 'dikembalikan ke belum dicek.'), 'ok'); });
+  }).catch(gagal);
+}
+
+function tandaiKiriman(id) {
+  var nama = namaCek(); if (!nama) return;
+  pesan('Menyimpan...');
+  run('apiTandaiKiriman', id, nama).then(function (r) {
+    return tampil().then(function () { pesan('Kiriman ditandai dicek (' + r.jml + ' baris).', 'ok'); });
+  }).catch(gagal);
+}
+
+function unduhExcel() {
+  var f = filter();
+  overlay('<p>Menyusun Excel format Rekap Gabungan...</p><p class="muted">Bisa 10-40 detik untuk semua depo.</p>');
+  run('apiUnduhRekap', f.depo, f.ym).then(function (r) {
+    tombolSimpan(b64KeBlob(r.b64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'), r.nama, 'Excel siap');
+  }).catch(function (e) { tutup(); gagal(e); });
+}
+
+function muatNota() {
+  var f = filter();
+  run('apiDaftarNota', f.depo, f.ym, el('cariNota').value).then(function (n) { APP.nota = n; gambarNota(); }).catch(gagal);
+}
+
+function gambarNota() {
+  var n = APP.nota;
+  if (!n.length) { el('daftarNota').innerHTML = '<span class="muted">Tidak ada nota untuk pilihan ini.</span>'; return; }
+  el('daftarNota').innerHTML = n.map(function (x, i) {
+    return '<div class="nota"><b>' + esc(x.nama) + '</b><small>' + esc(namaDepo(x.depo)) + ' &middot; ' + esc(x.bulan) + ' &middot; ' + x.kb + ' KB</small>' +
+      '<button class="kecil" onclick="lihatNota(' + i + ')">Lihat</button> <button class="ghost kecil" onclick="unduhNota(' + i + ')">Unduh</button></div>';
+  }).join('');
+}
+
+function ambilNota(i) { return run('apiAmbilNota', APP.nota[i].fileId); }
+
+function lihatNota(i) {
+  overlay('<p>Memuat foto nota...</p>');
+  ambilNota(i).then(function (r) {
+    var url = URL.createObjectURL(b64KeBlob(r.b64, r.mime));
+    overlay('<img src="' + url + '" alt="' + esc(r.nama) + '"><a class="btn" href="' + url + '" download="' + esc(r.nama) + '">Simpan</a> <button class="ghost" onclick="tutup()">Tutup</button>');
+  }).catch(function (e) { tutup(); gagal(e); });
+}
+
+function unduhNota(i) {
+  overlay('<p>Menyiapkan file...</p>');
+  ambilNota(i).then(function (r) { tombolSimpan(b64KeBlob(r.b64, r.mime), r.nama, 'Nota siap'); }).catch(function (e) { tutup(); gagal(e); });
+}
+
+async function unduhSemuaNota() {
+  var n = APP.nota;
+  if (!n.length) { pesan('Tidak ada nota untuk diunduh.', 'err'); return; }
+  try {
+    var zip = new JSZip();
+    for (var i = 0; i < n.length; i++) {
+      overlay('<p>Mengambil nota ' + (i + 1) + ' dari ' + n.length + '...</p>');
+      var r = await ambilNota(i);
+      zip.folder(n[i].depo + '/' + n[i].ym).file(r.nama, r.b64, { base64: true });
+    }
+    overlay('<p>Membuat file zip...</p>');
+    var blob = await zip.generateAsync({ type: 'blob' });
+    var f = filter();
+    tombolSimpan(blob, 'Nota_Kas_Kecil_' + (f.depo === 'SEMUA' ? 'Semua_Depo' : f.depo.replace(/\s+/g, '_')) + '_' + (f.ym === 'SEMUA' ? 'Semua_Bulan' : f.ym) + '.zip', 'Zip siap');
+  } catch (e) { tutup(); gagal(e); }
+}
+
+el('fDepo').onchange = tampil; el('fBulan').onchange = tampil; el('fStatus').onchange = tampil;
+el('overlay').onclick = function (e) { if (e.target === el('overlay')) tutup(); };
+muat();
+</script>
+</body>
+</html>
