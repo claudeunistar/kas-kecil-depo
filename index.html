@@ -183,7 +183,8 @@ function bacaKas(zip, mulai) {
           var ada = Object.keys(b).some(function (k) { return String(b[k]).trim().toUpperCase() === 'KETERANGAN'; });
           if (ada) {
             hdr = nomor[i];
-            Object.keys(b).forEach(function (k) { kol[String(b[k]).trim().toUpperCase().replace(/\s+/g, ' ')] = +k; });
+            // judul kolom kembar (mis. "KETERANGAN" di C dan "keterangan" di N) -> pakai kolom PALING KIRI
+            Object.keys(b).forEach(function (k) { var nm = String(b[k]).trim().toUpperCase().replace(/\s+/g, ' '); if (nm && !kol[nm]) kol[nm] = +k; });
             break;
           }
         }
